@@ -4,13 +4,13 @@ on:
     inputs:
       ipa_url:
         description: "URL to the decrypted IPA file"
-        default: ""
+        default: "https://www.dropbox.com/scl/fi/82rfp381zf1yquujf312j/YouTubePlus_5.2.1_patch_zarzel.ipa?rlkey=0xfbl2zhjmchyyc04sdtju2cp&st=by2nccf0&dl=0"
         required: true
         type: string
 
       display_name:
         description: "App Name (Optional)"
-        default: "YouTube"
+        default: "KiraTunoX"
         required: true
         type: string
 
@@ -198,8 +198,8 @@ jobs:
       - name: Clone PSHeader
         run: git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git $THEOS/include/PSHeader
 
-      - name: Clone YouMod
-        run: git clone --quiet --depth=1 https://github.com/Tonwalter888/YouMod.git
+      - name: Clone YTFlags
+        run: git clone --quiet --depth=1 https://github.com/Tonwalter888/YTFlags.git
 
       - name: Clone YouPiP
         if: ${{ inputs.youpip }}
@@ -280,12 +280,14 @@ jobs:
         if: ${{ inputs.volboost }}
         run: git clone --quiet --depth=1 https://github.com/VasirakCalgux/VolumeBoostYT.git
 
-      - name: Build YouMod
+      - name: Clone YTAnotherMiniplayer
+        run: git clone --quiet --depth=1 https://github.com/PoomSmart/YTAnotherMiniplayer.git
+
+      - name: Build YTFlags
         run: |
-          cd YouMod
-          echo "YOUMOD_VERSION=$(grep '^Version:' control | cut -d ' ' -f2)" >> $GITHUB_ENV
+          cd YTFlags
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-          mv packages/*.deb ${{ github.workspace }}/youmod.deb
+          mv packages/*.deb ${{ github.workspace }}/ytflags.deb
         
       - name: Build YouPiP
         if: ${{ inputs.youpip }}
@@ -427,6 +429,12 @@ jobs:
           cd VolumeBoostYT
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64
           mv packages/*.deb ${{ github.workspace }}/volboostyt.deb
+
+      - name: Build YTAnotherMiniplayer
+        run: |
+          cd YTAnotherMiniplayer
+          make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
+          mv packages/*.deb ${{ github.workspace }}/ytanmp.deb
           
       - name: Inject Tweaks Into IPA
         run: |
