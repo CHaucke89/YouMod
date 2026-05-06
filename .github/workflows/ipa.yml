@@ -429,12 +429,6 @@ jobs:
           cd VolumeBoostYT
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless ARCHS=arm64
           mv packages/*.deb ${{ github.workspace }}/volboostyt.deb
-
-      - name: Build YTAnotherMiniplayer
-        run: |
-          cd YTAnotherMiniplayer
-          make clean packager DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
-          mv packages/*.deb ${{ github.workspace }}/ytanmp.deb
           
       - name: Inject Tweaks Into IPA
         run: |
