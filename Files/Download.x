@@ -203,8 +203,8 @@ static NSString *YouModYouTubeCookiesString(void) {
 }
 
 static NSString *YouModNativeUserAgent(void) {
-    NSString *version = @"18.18.2";
-    NSString *sysVersion = [[UIDevice currentDevice].systemVersion stringByReplacingOccurrencesOfString:@"." withString:@"_"] ?: @"17_4";
+    NSString *version = @"21.17.3";
+    NSString *sysVersion = [[UIDevice currentDevice].systemVersion stringByReplacingOccurrencesOfString:@"." withString:@"_"] ?: @"26_4";
     return [NSString stringWithFormat:@"com.google.ios.youtube/%@ (iPhone; CPU iPhone OS %@ like Mac OS X)", version, sysVersion];
 }
 
@@ -808,35 +808,19 @@ static void YouModAppendFFmpegKitLoadEntry(NSString *format, ...) {
     }
 }
 
-static void YouModAppendFFmpegKitSearchDirectory(NSMutableOrderedSet <NSString *> *directories, NSString *path) {
-    if (path.length == 0) return;
-    [directories addObject:path];
-}
-
 static NSArray <NSString *> *YouModFFmpegKitSearchDirectories(void) {
     NSMutableOrderedSet <NSString *> *directories = [NSMutableOrderedSet orderedSet];
-    NSBundle *mainBundle = NSBundle.mainBundle;
-    NSString *resourcePath = mainBundle.resourcePath;
-    NSString *frameworksPath = mainBundle.privateFrameworksPath;
-    NSString *executableDirectory = mainBundle.executablePath.stringByDeletingLastPathComponent;
-
-    YouModAppendFFmpegKitSearchDirectory(directories, @"/Library/Frameworks");
-    YouModAppendFFmpegKitSearchDirectory(directories, frameworksPath);
-    YouModAppendFFmpegKitSearchDirectory(directories, [resourcePath stringByAppendingPathComponent:@"Frameworks"]);
-    YouModAppendFFmpegKitSearchDirectory(directories, [resourcePath stringByAppendingPathComponent:@"YouMod.bundle/Frameworks"]);
-    YouModAppendFFmpegKitSearchDirectory(directories, [executableDirectory stringByAppendingPathComponent:@"Frameworks"]);
-    YouModAppendFFmpegKitSearchDirectory(directories, [executableDirectory stringByAppendingPathComponent:@"YouMod.bundle/Frameworks"]);
-
-    NSString *bundlePath = [resourcePath stringByAppendingPathComponent:@"YouMod.bundle"];
-    NSBundle *youModBundle = [NSBundle bundleWithPath:bundlePath];
-    YouModAppendFFmpegKitSearchDirectory(directories, [youModBundle.resourcePath stringByAppendingPathComponent:@"Frameworks"]);
-
-    Dl_info imageInfo;
-    if (dladdr((const void *)&YouModFFmpegKitSearchDirectories, &imageInfo) && imageInfo.dli_fname) {
-        NSString *imageDirectory = [[NSString stringWithUTF8String:imageInfo.dli_fname] stringByDeletingLastPathComponent];
-        YouModAppendFFmpegKitSearchDirectory(directories, [imageDirectory stringByAppendingPathComponent:@"Frameworks"]);
-        YouModAppendFFmpegKitSearchDirectory(directories, [[imageDirectory stringByDeletingLastPathComponent] stringByAppendingPathComponent:@"Frameworks"]);
+    
+    // Path to YouMod.bundle/Frameworks inside the main app bundle
+    NSString *bundlePath = [[NSBundle.mainBundle resourcePath] stringByAppendingPathComponent:@"YouMod.bundle"];
+    NSString *frameworksInsideBundle = [bundlePath stringByAppendingPathComponent:@"Frameworks"];
+    
+    // Safety check: only add if the directory actually exists
+    BOOL isDir = NO;
+    if ([[NSFileManager defaultManager] fileExistsAtPath:frameworksInsideBundle isDirectory:&isDir] && isDir) {
+        [directories addObject:frameworksInsideBundle];
     }
+
     return directories.array;
 }
 
@@ -867,29 +851,15 @@ static void YouModLoadFrameworkBinary(NSString *directory, NSString *frameworkNa
     YouModDlopenPathIfPresent([[directory stringByAppendingPathComponent:[frameworkName stringByAppendingString:@".framework"]] stringByAppendingPathComponent:frameworkName]);
 }
 
-static void YouModLoadFrameworkBinaryByInstallName(NSString *frameworkName, NSString *binaryName) {
-    if (frameworkName.length == 0 || binaryName.length == 0) return;
-    NSString *relativePath = [NSString stringWithFormat:@"%@.framework/%@", frameworkName, binaryName];
-    NSArray <NSString *> *prefixes = @[
-        @"@rpath",
-        @"@executable_path/Frameworks",
-        @"@loader_path/Frameworks",
-        @"/Library/Frameworks",
-    ];
-    for (NSString *prefix in prefixes)
-        YouModDlopenPath([prefix stringByAppendingPathComponent:relativePath], NO);
-}
-
 static void YouModLoadFFmpegKitIfNeeded(void) {
     static BOOL attempted = NO;
-    if (NSClassFromString(@"FFmpegKit")) {
-        YouModAppendFFmpegKitLoadEntry(@"FFmpegKit class already present before load");
-        return;
-    }
+    if (NSClassFromString(@"FFmpegKit")) return;
     if (attempted) return;
     attempted = YES;
-    YouModAppendFFmpegKitLoadEntry(@"begin FFmpegKit load");
 
+    YouModAppendFFmpegKitLoadEntry(@"[YouMod] Starting bundled FFmpegKit load...");
+
+    // Order is important: load dependencies (avutil, etc.) before the main toolkit
     NSArray <NSArray <NSString *> *> *frameworks = @[
         @[@"libavutil", @"libavutil"],
         @[@"libswresample", @"libswresample"],
@@ -902,25 +872,26 @@ static void YouModLoadFFmpegKitIfNeeded(void) {
         @[@"FFmpegKit", @"FFmpegKit"],
     ];
 
-    for (NSString *directory in YouModFFmpegKitSearchDirectories()) {
-        YouModAppendFFmpegKitLoadEntry(@"search directory %@ exists=%@", directory, [NSFileManager.defaultManager fileExistsAtPath:directory] ? @"YES" : @"NO");
+    NSArray *searchDirs = YouModFFmpegKitSearchDirectories();
+    if (searchDirs.count == 0) {
+        YouModAppendFFmpegKitLoadEntry(@"[YouMod] Error: Bundled Frameworks directory not found.");
+        return;
+    }
+
+    // Only iterate through our controlled bundle directory
+    for (NSString *directory in searchDirs) {
         for (NSArray <NSString *> *framework in frameworks) {
+            // This helper uses dlopen on the direct path within our bundle
             YouModLoadFrameworkBinary(directory, framework.firstObject, framework.lastObject);
         }
+        
         if (NSClassFromString(@"FFmpegKit")) {
-            YouModAppendFFmpegKitLoadEntry(@"FFmpegKit class became available from %@", directory);
+            YouModAppendFFmpegKitLoadEntry(@"[YouMod] Success: FFmpegKit loaded from bundle.");
             return;
         }
     }
 
-    for (NSArray <NSString *> *framework in frameworks) {
-        YouModLoadFrameworkBinaryByInstallName(framework.firstObject, framework.lastObject);
-        if (NSClassFromString(@"FFmpegKit")) {
-            YouModAppendFFmpegKitLoadEntry(@"FFmpegKit class became available from dyld install name");
-            return;
-        }
-    }
-    YouModAppendFFmpegKitLoadEntry(@"FFmpegKit class was not available after load attempts");
+    YouModAppendFFmpegKitLoadEntry(@"[YouMod] Critical: FFmpegKit could not be found in YouMod.bundle.");
 }
 
 static Class YouModFFmpegKitClass(void) {
@@ -2324,7 +2295,7 @@ static void YouModShowDownloadManager(YTPlayerViewController *player, UIViewCont
 
     NSString *videoID = YouModVideoIDForPlayer(player);
     NSMutableArray *items = [NSMutableArray array];
-    [items addObject:[YouModMenuItem itemWithTitle:@"Download video" subtitle:@"Choose quality" icon:YouModIconImage(57) handler:^{
+    [items addObject:[YouModMenuItem itemWithTitle:@"Download video" subtitle:@"Choose quality" icon:YouModIconImage(658) handler:^{
         YouModShowVideoQualitySheet(player, presenter, sender);
     }]];
     [items addObject:[YouModMenuItem itemWithTitle:@"Download audio" subtitle:@"Choose format" icon:YouModIconImage(21) handler:^{
@@ -2333,7 +2304,7 @@ static void YouModShowDownloadManager(YTPlayerViewController *player, UIViewCont
     [items addObject:[YouModMenuItem itemWithTitle:@"Download captions" subtitle:@"Save subtitles as VTT" icon:YouModIconImage(637) handler:^{
         YouModShowCaptionsSheet(player, presenter, sender);
     }]];
-    [items addObject:[YouModMenuItem itemWithTitle:@"Copy diagnostics" subtitle:@"Copy last error log" icon:YouModIconImage(636) handler:^{
+    [items addObject:[YouModMenuItem itemWithTitle:@"Copy diagnostics" subtitle:@"Copy last error log" icon:YouModIconImage(870) handler:^{
         YouModCopyDownloadDiagnostics(presenter);
     }]];
     [items addObject:[YouModMenuItem itemWithTitle:@"Save thumbnail" subtitle:@"Save to Photos" icon:YouModIconImage(367) handler:^{
