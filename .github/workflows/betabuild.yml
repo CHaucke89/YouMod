@@ -199,7 +199,7 @@ jobs:
         run: git clone --quiet --depth=1 https://github.com/PoomSmart/PSHeader.git $THEOS/include/PSHeader
 
       - name: Clone YouMod
-        run: git clone --quiet --depth=1 https://github.com/grohit1810/YouMod/tree/feature/add-sponsorblock.git
+        run: git clone --quiet https://github.com/grohit1810/YouMod.git
 
       - name: Clone YouPiP
         if: ${{ inputs.youpip }}
@@ -295,6 +295,7 @@ jobs:
       - name: Build YouMod
         run: |
           cd YouMod
+          git switch feature/add-sponsorblock
           echo "YOUMOD_VERSION=$(grep '^Version:' control | cut -d ' ' -f2)" >> $GITHUB_ENV
           make clean package DEBUG=0 FINALPACKAGE=1 THEOS_PACKAGE_SCHEME=rootless
           mv packages/*.deb ${{ github.workspace }}/youmod.deb
